@@ -9,6 +9,16 @@ import bodyParser from 'body-parser'
 import path from 'path'
 import Pusher from 'pusher'
 import Posts from './postModel.js'
+import { v2 as cloudinary } from 'cloudinary'
+require('dotenv').config()
+
+// Make sure you fill your environment variables in .env file
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+});
 
 //app config
 Grid.mongo = mongoose.mongo
@@ -57,6 +67,26 @@ const storage = new GridFsStorage({
     }
 })
 
+// cloudinary method to upload image
+const uploadImageToCloudinary = (file) => {
+    return new Promise((resolve, reject) => {
+      const filename = `image-${Date.now()}${path.extname(file.originalname)}`;
+      const uploadOptions = {
+        folder: 'images',
+        public_id: filename,
+        overwrite: true,
+      };
+  
+      cloudinary.uploader.upload(file.path, uploadOptions, (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result.secure_url); // Return the secure URL of the uploaded image
+        }
+      });
+    });
+  };
+
 const upload = multer({ storage })
 
 mongoose.connect(connection_url, {
@@ -70,9 +100,9 @@ mongoose.connection.once('open', () => {
     const changeStream = mongoose.connection.collection('posts').watch()
     changeStream.on('change', change => {
         console.log(change)
-        if(change.operationType === "insert") {
+        if (change.operationType === "insert") {
             console.log('Trigerring Pusher')
-            pusher.trigger('posts','inserted', {
+            pusher.trigger('posts', 'inserted', {
                 change: change
             })
         } else {
@@ -85,16 +115,26 @@ mongoose.connection.once('open', () => {
 //api routes
 app.get("/", (req, res) => res.status(200).send("Hello TheWebDev"))
 
-app.post('/upload/image', upload.single('file'),(req, res) => {
+// new route added to upload image using cloudinary
+app.post('/upload', async (req, res) => {
+    try {
+      const imageUrl = await uploadImageToCloudinary(req.file);
+      res.status(200).json({ imageUrl });
+    } catch (error) {
+      res.status(500).json({ error: 'Image upload failed' });
+    }
+  });
+
+app.post('/upload/image', upload.single('file'), (req, res) => {
     res.status(201).send(req.file)
 })
 
-app.get('/images/single',(req, res) => {
+app.get('/images/single', (req, res) => {
     gfs.files.findOne({ filename: req.query.name }, (err, file) => {
-        if(err) {
+        if (err) {
             res.status(500).send(err)
         } else {
-            if(!file || file.length === 0) {
+            if (!file || file.length === 0) {
                 res.status(404).json({ err: 'file not found' })
             } else {
                 const readstream = gfs.createReadStream(file.filename)
@@ -107,7 +147,7 @@ app.get('/images/single',(req, res) => {
 app.post('/upload/post', (req, res) => {
     const dbPost = req.body
     Posts.create(dbPost, (err, data) => {
-        if(err)
+        if (err)
             res.status(500).send(err)
         else
             res.status(201).send(data)
@@ -116,10 +156,10 @@ app.post('/upload/post', (req, res) => {
 
 app.get('/posts', (req, res) => {
     Posts.find((err, data) => {
-        if(err) {
+        if (err) {
             res.status(500).send(err)
         } else {
-            data.sort((b,a) => a.timestamp - b.timestamp)
+            data.sort((b, a) => a.timestamp - b.timestamp)
             res.status(200).send(data)
         }
     })
