@@ -10,13 +10,12 @@ import path from 'path'
 import Pusher from 'pusher'
 import Posts from './postModel.js'
 import { v2 as cloudinary } from 'cloudinary'
-require('dotenv').config()
 
 // Make sure you fill your environment variables in .env file
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    cloud_name: "dfflmr6hj",
+    api_key: "826598445678311",
+    api_secret: "6rKSnvQHAWTtvrR2ppuav3i3Gzw",
     secure: true
 });
 
@@ -53,39 +52,52 @@ connection.once('open', () => {
     gfs.collection('images')
 })
 
-const storage = new GridFsStorage({
-    url: connection_url,
-    file: (req, file) => {
-        return new Promise((resolve, reject) => {
-            const filename = `image-${Date.now()}${path.extname(file.originalname)}`
-            const fileInfo = {
-                filename: filename,
-                bucketName: 'images'
-            }
-            resolve(fileInfo)
-        })
-    }
-})
+// const storage = new GridFsStorage({
+//     url: connection_url,
+//     file: (req, file) => {
+//         return new Promise((resolve, reject) => {
+//             const filename = `image-${Date.now()}${path.extname(file.originalname)}`
+//             const fileInfo = {
+//                 filename: filename,
+//                 bucketName: 'images'
+//             }
+//             resolve(fileInfo)
+//         })
+//     }
+// })
 
 // cloudinary method to upload image
 const uploadImageToCloudinary = (file) => {
+    console.log(file);
     return new Promise((resolve, reject) => {
-      const filename = `image-${Date.now()}${path.extname(file.originalname)}`;
-      const uploadOptions = {
-        folder: 'images',
-        public_id: filename,
-        overwrite: true,
-      };
-  
-      cloudinary.uploader.upload(file.path, uploadOptions, (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result.secure_url); // Return the secure URL of the uploaded image
-        }
-      });
+        const filename = `image-${Date.now()}`;
+        console.log(filename);
+        const uploadOptions = {
+            folder: 'images',
+            public_id: filename,
+            overwrite: true,
+        };
+
+        cloudinary.uploader.upload(file.path, uploadOptions, (error, result) => {
+            if (error) {
+                return error;
+            } else {
+                resolve(result.secure_url); // Return the secure URL of the uploaded image
+            }
+        });
     });
-  };
+};
+
+// Set up multer middleware
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads'); // Specify the upload directory
+    },
+    filename: (req, file, cb) => {
+        const filename = `image-${Date.now()}${path.extname(file.originalname)}`;
+        cb(null, filename);
+    },
+});
 
 const upload = multer({ storage })
 
@@ -116,14 +128,16 @@ mongoose.connection.once('open', () => {
 app.get("/", (req, res) => res.status(200).send("Hello TheWebDev"))
 
 // new route added to upload image using cloudinary
-app.post('/upload', async (req, res) => {
+app.post('/upload', upload.single('file'), async(req, res) => {
     try {
-      const imageUrl = await uploadImageToCloudinary(req.file);
-      res.status(200).json({ imageUrl });
+        console.log(req.file);
+        const imageUrl = await uploadImageToCloudinary(req.file);
+        res.status(200).json({ imageUrl });
     } catch (error) {
-      res.status(500).json({ error: 'Image upload failed' });
+        console.log(error);
+        res.status(500).send(error);
     }
-  });
+});
 
 app.post('/upload/image', upload.single('file'), (req, res) => {
     res.status(201).send(req.file)
